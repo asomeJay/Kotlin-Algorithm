@@ -1,218 +1,225 @@
-import Storage.Companion.N
 import Storage.Companion.M
-import Storage.Companion.K
-import Storage.Companion.dc
-import Storage.Companion.dice
-import Storage.Companion.dr
-import Storage.Companion.map
-import Storage.Companion.score
+import Storage.Companion.S
+import Storage.Companion.directions
+import Storage.Companion.fishEggMap
+import Storage.Companion.fishMap
+import Storage.Companion.rc
+import Storage.Companion.shark
+import Storage.Companion.smellMap
 
 class Storage {
     companion object {
-        var N: Int = 0
+        val fishMap: Array<Array<IntArray>> = Array(5) { Array(5) { IntArray(8) { 0 } } }
+        val fishEggMap: Array<Array<IntArray>> = Array(5) { Array(5) { IntArray(8) { 0 } } }
+
+        val smellMap = Array(5) { Array(5) { Smell(0, false) } }
+        var S: Int = 0
         var M: Int = 0
-        var K: Int = 0
-        lateinit var map: Array<IntArray>
-        var dice: Dice = Dice()
-        var score: Int = 0
-        val dr = intArrayOf(-1, 0, 1, 0)
-        val dc = intArrayOf(0, 1, 0, -1)
+        val directions =
+            arrayOf(
+                Point(0, -1),
+                Point(-1, -1),
+                Point(-1, 0),
+                Point(-1, 1),
+                Point(0, 1),
+                Point(1, 1),
+                Point(1, 0),
+                Point(1, -1))
+        val rc = arrayOf(Point(-1, 0), Point(0, -1), Point(1, 0), Point(0, 1))
+        var shark = Shark(Point(-1, -1))
     }
 }
 
-const val L = 0
-const val R = 1
-const val U = 2
-const val D = 3
 
-data class Dice(var r: Int = 1, var c: Int = 1, var dir: Int = 1) {
-    var horizon: IntArray = intArrayOf(4, 1, 3, 6)
-    var vertical: IntArray = intArrayOf(5, 1, 2, 6)
+data class Point(var r: Int, var c: Int)
+
+data class Shark(var p: Point) {
+    fun isExist(r: Int, c: Int): Boolean = p.r == r && p.c == c
 
     fun move() {
-        when (dir) {
-            L -> left()
-            R -> right()
-            U -> up()
-            D -> down()
+        val list = generateMoveList()
+        for (i in 0..2) {
+            // 상어가 움직인다
+            p = Point(list[i].r, list[i].c)
+            // 격자에서 제외되는 물고기는 냄새를 남긴다.
+            if (fishMap[p.r][p.c].sum() != 0) {
+                smellMap[p.r][p.c].trace = true
+                smellMap[p.r][p.c].disappearCount = 2
+            }
+
+            // 물고기 격자에서 제외하기
+            fishMap[p.r][p.c].fill(0)
         }
     }
 
-    fun turn(B: Int) {
-        when {
-            horizon[3] > B -> turnRight()
-            horizon[3] < B -> turnLeft()
+    fun generateMoveList(): List<Point> {
+        lateinit var list: MutableList<Point>
+        var maximum = Integer.MIN_VALUE
+        fun calculateAcc(isVisited: Array<BooleanArray>, acc: Int, point: Point): Int {
+            if (!isVisited[point.r][point.c]) {
+                isVisited[point.r][point.c] = true
+                return acc + fishMap[point.r][point.c].sum()
+            }
+            return acc
         }
-    }
 
-    private fun turnLeft() {
-        dir = when (dir) {
-            L -> D
-            D -> R
-            R -> U
-            U -> L
-            else -> throw IllegalStateException("")
+        fun selectMoveList(tempList: MutableList<Point>) {
+            val isVisited: Array<BooleanArray> = Array(5) { BooleanArray(5) { false } }
+            val experimental = tempList.fold(0) { acc, point -> (calculateAcc(isVisited, acc, point)) }
+            if (maximum < experimental) {
+                list = tempList.toMutableList()
+                maximum = experimental
+            }
+            return
         }
-    }
 
-    private fun turnRight() {
-        dir = when (dir) {
-            L -> U
-            U -> R
-            R -> D
-            D -> L
-            else -> throw IllegalStateException("")
+        fun moveListArbiter(curR: Int, curC: Int, cnt: Int, tempList: MutableList<Point>) {
+            if (cnt == 0) {
+                selectMoveList(tempList)
+                return
+            }
+
+            for (i in 0..3) {
+                val nr = curR + rc[i].r
+                val nc = curC + rc[i].c
+                if (isRange(nr, nc)) {
+                    tempList.add(Point(nr, nc))
+                    moveListArbiter(nr, nc, cnt - 1, tempList)
+                    tempList.removeLast()
+                }
+            }
         }
-    }
 
-    private fun changeDirection() {
-        dir = when (dir) {
-            L -> R
-            R -> L
-            U -> D
-            D -> U
-            else -> throw IllegalStateException("")
-        }
-    }
-
-    private fun left() {
-        c--
-        if (!isRange(r, c)) {
-            changeDirection()
-            c++
-            return move()
-        }
-        val temp = horizon[0]
-        horizon[0] = horizon[1]
-        horizon[1] = horizon[2]
-        horizon[2] = horizon[3]
-        horizon[3] = temp
-
-        vertical[1] = horizon[1]
-        vertical[3] = horizon[3]
-    }
-
-    private fun right() {
-        c++
-        if (!isRange(r, c)) {
-            changeDirection()
-            c--
-            return move()
-        }
-        val temp = horizon[3]
-        horizon[3] = horizon[2]
-        horizon[2] = horizon[1]
-        horizon[1] = horizon[0]
-        horizon[0] = temp
-
-        vertical[1] = horizon[1]
-        vertical[3] = horizon[3]
-    }
-
-    private fun up() {
-        r--
-        if (!isRange(r, c)) {
-            changeDirection()
-            r++
-            return move()
-        }
-        val temp = vertical[3]
-        vertical[3] = vertical[2]
-        vertical[2] = vertical[1]
-        vertical[1] = vertical[0]
-        vertical[0] = temp
-
-        horizon[1] = vertical[1]
-        horizon[3] = vertical[3]
-    }
-
-    private fun down() {
-        r++
-        if (!isRange(r, c)) {
-            changeDirection()
-            r--
-            return move()
-        }
-        val temp = vertical[0]
-        vertical[0] = vertical[1]
-        vertical[1] = vertical[2]
-        vertical[2] = vertical[3]
-        vertical[3] = temp
-
-        horizon[1] = vertical[1]
-        horizon[3] = vertical[3]
-    }
-
-    fun debug() {
-        println()
-        println("     ${vertical[2]}      ")
-        println("   ${horizon[0]} ${horizon[1]} ${horizon[2]}      ")
-        println("     ${vertical[0]}      ")
-        println("     ${vertical[3]}      ")
-        println()
+        moveListArbiter(p.r, p.c, 3, mutableListOf())
+        return list
     }
 }
 
+data class Smell(var disappearCount: Int, var trace: Boolean) {
+    companion object {
+        fun disappear() {
+            for (i in 1..4) {
+                for (j in 1..4) {
+                    if (smellMap[i][j].disappearCount == 0) {
+                        smellMap[i][j].trace = false
+                    }
+                }
+            }
+        }
+
+        fun downCount() {
+            for (i in 1..4) {
+                for (j in 1..4) {
+                    if (smellMap[i][j].disappearCount > 0) {
+                        smellMap[i][j].disappearCount--
+                    }
+                }
+            }
+        }
+    }
+}
+
+fun isRange(r: Int, c: Int) = r in (1..4) && c in (1..4)
 
 fun main() {
     input()
-    proceed()
+    for (i in 0 until S) {
+        proceed()
+    }
     output()
 }
 
 fun output() {
-    println(score)
+    var sum = 0
+    for (i in 1..4) {
+        for (j in 1..4) {
+            sum += fishMap[i][j].sum()
+        }
+    }
+    println(sum)
 }
 
 fun proceed() {
-    repeat(K) {
-        dice.move()
-        earnPoints()
-        dice.turn(map[dice.r][dice.c])
-    }
+    // 복제마법을 시전한다.
+    castCloneSpell()
+
+    // 물고기가 움직인다.
+    fishMove()
+
+    // 상어가 움직인다.
+    shark.move()
+
+    // 두번전 연습에서 생긴 물고기의 냄새가 격자에서 사라진다.
+    Smell.disappear()
+
+    // 1에서 사용한 복제 마법이 완료된다. 모든 복제된 물고기는 1에서의 위치와 방향을 그대로 갖게된다.
+    completeCloneSpell()
+
+    Smell.downCount()
 }
 
-data class P(val r: Int, val c: Int, val acc: Int)
-
-fun earnPoints() {
-    val B = map[dice.r][dice.c]
-    var C = 0
-    val q = mutableListOf<P>()
-    val isVisited = Array(map.size) { BooleanArray(map[0].size) { false } }
-
-    q.add(P(dice.r, dice.c, 1))
-    isVisited[dice.r][dice.c] = true
-
-    while (q.isNotEmpty()) {
-        val p = q.removeAt(0)
-        C++
-        for (i in 0..3) {
-            val nr = p.r + dr[i]
-            val nc = p.c + dc[i]
-            if (isRange(nr, nc) && !isVisited[nr][nc] && map[nr][nc] == B) {
-                isVisited[nr][nc] = true
-                q.add(P(nr, nc, p.acc + 1))
+fun castCloneSpell() {
+    for (i in 1..4) {
+        for (j in 1..4) {
+            for(k in 0..7){
+                fishEggMap[i][j][k] = fishMap[i][j][k]
             }
         }
     }
-    score += (B * C)
 }
 
-fun input() {
-    val list = readLine()!!.split(" ").map { it.toInt() }
-    N = list[0]
-    M = list[1]
-    K = list[2]
+fun fishMove() {
+    val fishMoveMap: Array<Array<IntArray>> = Array(5) { Array(5) { IntArray(8) { 0 } } }
 
-    map = Array(N + 1) { IntArray(M + 1) { 0 } }
-    for(i in 1..N){
-        val row = readLine()!!.split(" ").map { it.toInt() }
-        for(j in 1..M){
-            map[i][j] = row[j - 1]
+    for (i in 1..4) {
+        for (j in 1..4) {
+            for(k in 0..7){
+                var dir = k
+
+                for(d in 0..7){
+                    val nextR = i + directions[dir].r
+                    val nextC = j + directions[dir].c
+
+                    if (!isRange(nextR, nextC) || shark.isExist(nextR, nextC) || smellMap[nextR][nextC].trace) {
+                        dir = if (dir == 0) 7 else (dir - 1)
+                        continue
+                    }
+                    fishMoveMap[nextR][nextC][dir] += fishMap[i][j][k]
+                    fishMap[i][j][k] = 0
+                    break
+                }
+            }
+        }
+    }
+    for(i in 1..4){
+        for(j in 1..4){
+            for(k in 0..7){
+                fishMap[i][j][k] += fishMoveMap[i][j][k]
+            }
         }
     }
 }
 
-fun isRange(r: Int, c: Int): Boolean {
-    return (r in 1..N) && (c in 1..M)
+fun completeCloneSpell() {
+    for (i in 1..4) {
+        for (j in 1..4) {
+            for(k in 0..7){
+                fishMap[i][j][k] += fishEggMap[i][j][k]
+                fishEggMap[i][j][k] = 0
+            }
+        }
+    }
+}
+
+fun input() {
+    val (m, s) = readLine()!!.split(" ").map { it.toInt() }
+    M = m
+    S = s
+    for (i in 0 until M) {
+        val (r, c, d) = readLine()!!.split(" ").map { it.toInt() }
+        fishMap[r][c][d-1]++
+    }
+
+    val (r, c) = readLine()!!.split(" ").map { it.toInt() }
+    shark.p = Point(r, c)
 }
